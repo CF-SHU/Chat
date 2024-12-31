@@ -1,0 +1,26 @@
+ntz1 Mickey
+ntz2 Donald
+ntz3 Minnie
+ntz4 Goofy
+ntz5 Pluto
+ntz6 Daisy
+ntz7 Huey
+ntz8 Dewey
+ntz9 Louie
+
+Mickey friend:
+Donald
+Goofy
+Dewey
+
+Donald friend:
+Mickey
+Minnie
+Goofy
+Louie
+
+Goofy friend:
+Mickey
+Donald
+
+
