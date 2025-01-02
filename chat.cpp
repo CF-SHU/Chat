@@ -30,9 +30,9 @@ string TimeAdd()
 {
     std::time_t current = std::time(nullptr);
     std::tm *localTime = std::localtime(&current);
-    string str = "-" + std::to_string(1900 + localTime->tm_year) + "-"
-                 + std::to_string(1 + localTime->tm_mon) + "-" + std::to_string(localTime->tm_mday)
-                 + "-" + std::to_string(localTime->tm_hour) + ":"
+    string str = "-" + std::to_string(1900 + localTime->tm_year) + "."
+                 + std::to_string(1 + localTime->tm_mon) + "." + std::to_string(localTime->tm_mday)
+                 + "." + std::to_string(localTime->tm_hour) + ":"
                  + std::to_string(localTime->tm_min) + ":" + std::to_string(localTime->tm_sec);
     return str;
 }
@@ -187,6 +187,7 @@ void dataRead(pqxx::connection &c)
 void setNO(std::string personname, pqxx::connection &c)
 {
     pqxx::work w(c);
+    //string inbool = "insert into " + personname + "(isOnline) values('NO');";
     string inbool = "UPDATE " + personname + " SET isOnline = 'NO';";
     w.exec(inbool);
     w.commit();
@@ -196,6 +197,10 @@ void setYes(std::string personname, pqxx::connection &c)
 {
     pqxx::work W(c);
     string inbool = "UPDATE " + personname + " SET isOnline = 'YES';";
+    //update是将isOnline这一列的所有值都设置为YES/NO.
+    //如果用户一次都没有上线，那么这一列就为空，如果上线那么就全为YES,如果下线就全为NO,
+    //如果一方没有上线，那么这一方的isOnline就为空，但之前的消息是NO（因为下线就全为NO)
+    //string inbool = "insert into " + personname + "(isOnline) values('YES');";
     W.exec(inbool);
     W.commit();
 }
@@ -207,24 +212,20 @@ void CreateTableForChat(pqxx::connection &c, string name, string id)
     //+"(" "name   varchar(50)," "id    varchar(30)," "info   " "varch" "ar(" "50000" ")," "sender   " "  " "varchar(" "50)," "is" "On" "li" "ne" "  " " c" "ha" "r(" "3)" ")" ";";
     string sql
         = "CREATE TABLE IF NOT EXISTS " + name
-          + "(info varchar(50000)," "sender varchar(50)," "isOnline char(3));"; //改变表的设计为info & isOnline & sender
+          + "(info varchar(50000)," "sender varchar(50)," "isOnline char(3)," "isNew char(3));";
+    //——————————————对于user table的设计思路解释——————————————
+    //改变表的设计为info & sender & isOnline & isNew
+    //info存发送的消息，sender存发送这条消息的人，isOnline标记是否在线，isNew标记该条消息是否为新消息
+    //发送一条消息时，如果在线，那么存在info中的就只有这条消息；同时sender存入(如果是自己发的消息，则="You"),isNew="NO",isOnline全为"YES"
+    //如果不在线，那么存在info中的就有"New messages:"+时间+该条消息，并且是一行一行存的,
+    //同时，存时间和信息的那一行的sender=发送方的名字&isNew="YES"，isOnline为空
+    //——————————————对于user table的设计思路解释——————————————
     {
         pqxx::work W(c);
         W.exec(sql);
         W.commit();
         //cout<<"create user table successfully.\n";
-    } //创建局部作用域的原因是为了不会出现数据库的事务关闭的错误
-    {
-        pqxx::work W(c);
-        //string inname = "insert into " + name + "(name) values('" + name + "');";
-        //string inid = "insert into " + name + "(id) values('" + id + "');";
-        string inbool = "insert into " + name + "(isOnline) values('NO');"; //初始化为不在线
-        //W.exec(inname);
-        //W.exec(inid);
-        W.exec(inbool);
-        W.commit();
-        //cout<<"insert name,id,isonline successfully.\n";
-    }
+    } //创建局部作用域的原因是为了不会出现数据库的事务关闭的错误,这里可以不加
 }
 //————————————————————————————————————————————————————————————————————————————————————
 //发消息
@@ -236,7 +237,6 @@ bool isOnline(string name, pqxx::connection &c)
     for (auto r : R) {
         string flag = r[0].c_str();
         if (flag == "YES") {
-            //W.rollback(); //如果发生错误或你决定不保存更改,回滚，并结束事务
             W.commit();
             return true;
         }
@@ -247,19 +247,25 @@ bool isOnline(string name, pqxx::connection &c)
 void ShowMessage(string name, pqxx::connection &c);
 void Send(string sender, string receiver, string message, pqxx::connection &c)
 {
+    string isNew; //用于判断该消息是否是新消息的标签
+    bool judge = isOnline(receiver, c);
+    if (!judge) {
+        isNew = "YES"; //如果接收方receiver不在线，那么message对receiver来说就是未读的新消息
+    } else {
+        isNew = "NO"; //如果receiver在线，那么message对receiver来说就是已读的消息
+    }
     string flag = "insert into " + receiver + "(info) values('New massages:');";
-    string currentTime = "insert into " + receiver + "(info) values('" + TimeAdd() + "');";
-    //未读标签与时间显示
+    string currentTime = "insert into " + receiver + "(info,sender,isNew) values('" + TimeAdd()
+                         + "','" + sender + "','YES');";
+    //未读标签与时间显示(时间显示是对receiver不在线的专属,未读那么isNew一定是YES
 
-    string Minesql = "insert into " + sender + "(info,sender) values('" + message + "','You');";
+    string Minesql = "insert into " + sender + "(info,sender,isNew) values('" + message
+                     + "','You','NO');"; //发送方sender一定在线，所以是已读消息
     //记录消息message在sender的info列中,使发送方的sender列为'you'整合在一起使得数据库的信息在一行中
-    string Othersql = "insert into " + receiver + "(info,sender) values('" + message + "','"
-                      + sender + "');";
+    string Othersql = "insert into " + receiver + "(info,sender,isNew) values('" + message + "','"
+                      + sender + "','" + isNew + "');";
     //记录消息message在receive的info列中,使接收方receiver的sender列为给他发消息的人的名字，即'sender'
 
-    //string inbool = "insert into " + name + "(isOnline) values(true);";
-
-    bool judge = isOnline(receiver, c);
     pqxx::work W(c);
     if (!judge) {
         W.exec(Minesql);
@@ -267,28 +273,54 @@ void Send(string sender, string receiver, string message, pqxx::connection &c)
         W.exec(currentTime);
         W.exec(Othersql);
         //对方不在线
-    } else {
-        W.exec(Minesql);  //我的
-        {
-            W.exec(Othersql);
-            W.commit();
-        } //别人
-        ShowMessage(sender, c);
-    } //对方在线
+    }
+    //else {
+    //     W.exec(Minesql);  //我的
+    //     {
+    //         W.exec(Othersql);
+    //         W.commit();
+    //     } //别人
+    //     ShowMessage(sender, c);
+    // } //对方在线?报错？
     W.commit();
 }
-//用于对方在线，且没有时间显示
-void ShowMessage(string name, pqxx::connection &c)
+// //用于对方在线，未调试
+// void ShowMessage(string name, pqxx::connection &c)
+// {
+//     pqxx::work W(c);
+//     cout << TimeAdd() << ": ";
+//     string sql = "select (info,sender) from " + name + ";";
+//     pqxx::result R = W.exec(sql);
+//     for (auto row : R) {
+//         if (!row.empty()) {
+//             pqxx::field m = row[0];
+//             if (!m.is_null()) {
+//                 string mes = pqxx::to_string(m);
+//                 cout << mes << endl;
+//             }
+//         }
+//     }
+//     W.commit();
+// }
+
+//显示未读消息和发送人
+void ShowNewMessage(const string name, pqxx::connection &c)
 {
-    pqxx::work W(c);
-    string sql = "select info from " + name + ";";
-    pqxx::result R = W.exec(sql);
-    for (auto row : R) {
-        string mes = row[2].c_str();
-        cout << TimeAdd() << ": ";
-        cout << mes << endl;
+    pqxx::work w(c);
+    string InfoSql = "SELECT  (info,sender) from " + name + " where isNew = 'YES';";
+    pqxx::result RI = w.exec(InfoSql);
+
+    for (auto row : RI) {
+        if (!row.empty()) {
+            pqxx::field i = row[0];
+            if (!i.is_null()) {
+                string info = pqxx::to_string(i);
+                std::cout << info << std::endl;
+            }
+        }
     }
-    W.commit();
+
+    w.commit();
 }
 //发消息————————————————————————————————————————————————————————————————————————————————————
 
@@ -317,11 +349,12 @@ void selectFunction(std::vector<Person> chat)
     int flag;
     std::cout << "---------------------------------" << std::endl;
     std::cout << "- Welcome to the chat room:     -" << std::endl;
-    std::cout << "- 1.查看我的好友                -" << '\n'
-              << "- 2.加好友                      -" << '\n'
-              << "- 3.删好友                      -" << '\n'
-              << "- 4.发消息                      -" << '\n'
-              << "- 5.保存退出                    -" << std::endl;
+    std::cout << "- 1.查看我的好友                  -" << '\n'
+              << "- 2.加好友                       -" << '\n'
+              << "- 3.删好友                       -" << '\n'
+              << "- 4.发消息                       -" << '\n'
+              << "- 5.查看未读消息                  -" << '\n'
+              << "- 6.保存退出                     -" << std::endl;
     std::cout << "---------------------------------" << std::endl;
     while (true) {
         std::cout << "Please select: ";
@@ -354,7 +387,21 @@ void selectFunction(std::vector<Person> chat)
                 std::getline(cin, message);
             }
         } break;
-        case (5):
+        case (5): {
+            ShowNewMessage(personname, c);
+            cout << "你想要选择其他功能吗？（Y/N)";
+            string x;
+            while (cin >> x) {
+                if (x == "Y") {
+                    selectFunction(chat);
+                } else if (x == "N") {
+                    break;
+                } else {
+                    cout << "请输入正确的选项-> (Y/N)";
+                }
+            }
+        }
+        case (6):
             setNO(personname, c);
             dataInsert(c);
             return;
