@@ -9,6 +9,8 @@ add_executable(chat
     person.h person.cpp
     chat.h chat.cpp
     data.dat
+    group.h group.cpp
+    netizen.h netizen.cpp
 
 )
 

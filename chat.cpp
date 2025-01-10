@@ -1,5 +1,6 @@
 #include "chat.h"
 #include "person.h"
+#include "netizen.h"
 #include <iostream>
 using std::cerr;
 using std::cin;
@@ -7,11 +8,18 @@ using std::cout;
 using std::endl;
 #include <string>
 using std::string;
+#include <limits>
 #include <ctime>
 #include <pqxx/pqxx>
 
-extern std::vector<Person> chat;
+// #include <algorithm>
+// using std::transform;
+// #include <cctype>
+// using std::tolower;
 
+extern std::vector<Person> chat;
+extern std::vector<Netizen> netizens;
+extern std::vector<Group> groups;
 //连接数据库
 pqxx::connection openDB()
 {
@@ -24,6 +32,50 @@ pqxx::connection openDB()
     }
     return c;
 }
+
+//————————————————————————————————————————————————————————————————————————————————————
+
+void selectGroupsToChat(std::string personname, std::vector<Netizen> netizens, pqxx::connection &A)
+{
+    Netizen *n = nullptr;
+    for (auto &a : netizens) {
+        if (a.sameName(personname)) {
+            n = &a;
+            break;
+        }
+    } //对网民的一个指针赋值
+    std::cout << "---------------------------------" << std::endl;
+    std::cout << "- Welcome to the  group chat room:     " << std::endl;
+    std::cout << "- 1.创建群聊             " << '\n'
+              << "- 2.加入群聊                      " << '\n'
+              << "- 3.选择群聊进行聊天                      " << '\n'
+              << "- 4.退出                    " << std::endl;
+    std::cout << "---------------------------------" << std::endl;
+
+    int flag;
+    while (true) {
+        std::cin >> flag;
+        switch (flag) {
+        case 1:
+            n->createGroup(A);
+            std::cout << "已退出创建群聊" << std::endl;
+            break;
+        case 2:
+            n->joinGroup(A);
+            std::cout << "已退出加入群聊" << std::endl;
+            break;
+        case 3:
+            n->chooseGroupToChat(A);
+            std::cout << "已退出聊天" << std::endl;
+            break;
+        default:
+            std::cout << "已成功退出" << std::endl;
+            break;
+        }
+    }
+}
+
+//————————————————————————————————————————————————————————————————————————————————————
 
 //添加时间戳
 string TimeAdd()
@@ -39,7 +91,7 @@ string TimeAdd()
 //————————————————————————————————————————————————————————————————————————————————————
 
 //查看登陆用户的好友信息，从chat数组中操作
-void outputFriend(std::string name)
+void outputFriend(string name)
 {
     if (chat.size() == 0) { //用不了？
         cout << "You don't have any firends yet." << endl;
@@ -50,8 +102,9 @@ void outputFriend(std::string name)
         }
     }
 }
-//判断名字是否相同，从chat数组中操作
-bool nameS(std::string personname)
+
+//判断名字是否相同，从chat数组中操作，用于addFriend()，Judgelogin函数
+bool nameS(string personname)
 {
     for (auto &d : chat) {
         if (d.sameName(personname))
@@ -59,9 +112,10 @@ bool nameS(std::string personname)
     }
     return false;
 }
+
 //添加好友，从chat数组中判断是否有该人的名字，然后从类引用addFriend函数
 //a_name 发送加好友申请的用户，b_name 想加的好友的名字
-void addFriend(std::string a_name, std::string b_name)
+void addFriend(string a_name, string b_name)
 {
     if (nameS(b_name)) {
         for (auto &a : chat) {
@@ -74,8 +128,9 @@ void addFriend(std::string a_name, std::string b_name)
         std::cout << "Your friends currently has no registered user!" << std::endl;
     }
 }
+
 //删好友,在类中操作
-void deleteFriend(std::string friendname, std::string personname)
+void deleteFriend(string friendname, string personname)
 {
     for (auto &c : chat) {
         if (c.sameName(personname)) {
@@ -85,30 +140,33 @@ void deleteFriend(std::string friendname, std::string personname)
 }
 
 //————————————————————————————————————————————————————————————————————————————————————
+
 //判断是否登陆成功，通过name判断
-bool Judgelogin(std::string personname)
+bool Judgelogin(string personname)
 {
     if (!nameS(personname)) {
         return false;
     }
     return true;
 }
+
 //用户登陆
-std::string Login(std::string personname, std::string personid)
+string Login(string personname, string personid)
 {
     std::cout << "Please enter your name and ID!" << '\n' << "Your name:";
     std::cin >> personname;
     std::cout << "Your ID:";
     std::cin >> personid;
     while (!Judgelogin(personname)) {
-        cout << "Your name is incorrect, You want to re-enter?(Y/N): ";
+        cout << "Your name is incorrect, You want to re-enter?(y/n): ";
         string answer;
         cin >> answer;
-        if (answer == "Y") {
+        if (answer == "y") {
             personname = Login(personname, personid);
-        } else if (answer == "N") {
+        } else if (answer == "n") {
             cout << "You are exitting the chat..." << endl;
             return "*";
+            //'*'用于判断用户是否想要继续登陆
         }
     }
     return personname;
@@ -134,20 +192,20 @@ void newuser(std::string personname, std::string personid, pqxx::connection &c)
 }
 
 //————————————————————————————————————————————————————————————————————————————————————
+
 //覆盖原本用户表中的内容，用于dataInsert
-void datacover(pqxx::connection &c, string tableName)
+void dataCover(pqxx::connection &c, string tableName)
 {
     std::string del = "truncate table " + tableName + ";";
     pqxx::work w(c);
     w.exec(del);
     w.commit();
 }
-//将chat数组中有关用户的信息全部写入数据库中的data表中
+
+//将chat数组中有关用户的信息全部写入数据库中的data表中，用于程序结束
 void dataInsert(pqxx::connection &c)
 {
-    //datacover(c, "donald");
-    //datacover(c, "mickey");
-    datacover(c, "data");
+    dataCover(c, "data");
     for (auto &a : chat) {
         std::string name = a.returnname();
         std::string id = a.returnId(name);
@@ -155,43 +213,50 @@ void dataInsert(pqxx::connection &c)
         std::string sql = "insert into data(id,name,friends) values('" + name + "','" + id + "','"
                           + friendname + "');";
         //实际上为了data表的灵活性，应该使表的名字为变量，然后加入sql语句的
+        //不过这里因为用户不需要看到表，那么就假设数据表的名称叫data
         pqxx::work w(c);
         w.exec(sql);
         w.commit();
     }
 }
-//从数据库中读取用户信息到chat数组
+
+//从数据库中读取用户信息到chat数组，用于程序开始
 void dataRead(pqxx::connection &c)
 {
-    std::string sql = "select id,name,friends from data;";
+    std::string s = "SELECT id,name,friends from data;";
     pqxx::work w(c);
-    pqxx::result res = w.exec(sql);
+    pqxx::result res = w.exec(s);
+    chat.clear(); //清空列表
     for (auto re : res) {
         std::string l_id;
         l_id = re["id"].c_str();
         std::string l_name;
         l_name = re["name"].c_str();
-        chat.emplace_back(l_name, l_id);
+        chat.emplace_back(l_id, l_name);
+        //？不是?person类是先name,再id的吗？？？？？？？？？？？？？？？？
+        //???????????????????????????????????????????????????????????????????????????????????????
+    }
+    int i = 0; //计数器
+    for (auto re : res) {
         std::string fri = re["friends"].c_str();
         //fri是一大串名字
-        for (auto &y : chat) {
-            y.writefriends(fri);
-            //用类函数处理
-        }
+        chat[i].writefriends(fri);
+        //因为是一行一行处理的表值，所以用i来计数，如果fri为空，writefriends就直接跳过
+        i++;
     }
     w.commit();
 }
 
-//————————————————————————————————————————————————————————————————————————————————————
-//在用户选择5保存退出时将该用户的表设置为不在线
+//——————————————————————————————————————————————————————————————————————————————————————
+//在用户选择保存退出时将该用户的表设置为不在线
 void setNO(std::string personname, pqxx::connection &c)
 {
     pqxx::work w(c);
-    //string inbool = "insert into " + personname + "(isOnline) values('NO');";
     string inbool = "UPDATE " + personname + " SET isOnline = 'NO';";
     w.exec(inbool);
     w.commit();
 }
+
 //登陆时设置用户表为在线状态
 void setYes(std::string personname, pqxx::connection &c)
 {
@@ -200,16 +265,15 @@ void setYes(std::string personname, pqxx::connection &c)
     //update是将isOnline这一列的所有值都设置为YES/NO.
     //如果用户一次都没有上线，那么这一列就为空，如果上线那么就全为YES,如果下线就全为NO,
     //如果一方没有上线，那么这一方的isOnline就为空，但之前的消息是NO（因为下线就全为NO)
-    //string inbool = "insert into " + personname + "(isOnline) values('YES');";
     W.exec(inbool);
     W.commit();
 }
-//————————————————————————————————————————————————————————————————————————————————————
+
 //用户注册，创建用户用于聊天的表
 void CreateTableForChat(pqxx::connection &c, string name, string id)
 {
-    //string sql = "CREATE TABLE IF NOT EXISTS " + name
-    //+"(" "name   varchar(50)," "id    varchar(30)," "info   " "varch" "ar(" "50000" ")," "sender   " "  " "varchar(" "50)," "is" "On" "li" "ne" "  " " c" "ha" "r(" "3)" ")" ";";
+    string dataSql
+        = "CREATE TABLE IF NOT EXISTS data(id varchar(30) NOT NULL," "name varchar(50) NOT NULL," "friends varchar(50000));";
     string sql
         = "CREATE TABLE IF NOT EXISTS " + name
           + "(info varchar(50000)," "sender varchar(50)," "isOnline char(3)," "isNew char(3));";
@@ -223,12 +287,13 @@ void CreateTableForChat(pqxx::connection &c, string name, string id)
     {
         pqxx::work W(c);
         W.exec(sql);
+        W.exec(dataSql);
         W.commit();
-        //cout<<"create user table successfully.\n";
     } //创建局部作用域的原因是为了不会出现数据库的事务关闭的错误,这里可以不加
 }
-//————————————————————————————————————————————————————————————————————————————————————
-//发消息
+
+//发消息———————————————————————————————————————————————————————————————————————————————————
+//判断是否在线
 bool isOnline(string name, pqxx::connection &c)
 {
     pqxx::work W(c);
@@ -244,7 +309,8 @@ bool isOnline(string name, pqxx::connection &c)
     W.commit();
     return false;
 }
-void ShowMessage(string name, pqxx::connection &c);
+
+//发消息，但只有异步，即只有一方在线的情况
 void Send(string sender, string receiver, string message, pqxx::connection &c)
 {
     string isNew; //用于判断该消息是否是新消息的标签
@@ -267,41 +333,42 @@ void Send(string sender, string receiver, string message, pqxx::connection &c)
     //记录消息message在receive的info列中,使接收方receiver的sender列为给他发消息的人的名字，即'sender'
 
     pqxx::work W(c);
-    if (!judge) {
+    //异步聊天
+    if (!judge) { //对方不在线
         W.exec(Minesql);
         W.exec(flag);
         W.exec(currentTime);
         W.exec(Othersql);
-        //对方不在线
     }
-    //else {
-    //     W.exec(Minesql);  //我的
-    //     {
-    //         W.exec(Othersql);
-    //         W.commit();
-    //     } //别人
-    //     ShowMessage(sender, c);
-    // } //对方在线?报错？
     W.commit();
 }
-// //用于对方在线，未调试
-// void ShowMessage(string name, pqxx::connection &c)
-// {
-//     pqxx::work W(c);
-//     cout << TimeAdd() << ": ";
-//     string sql = "select (info,sender) from " + name + ";";
-//     pqxx::result R = W.exec(sql);
-//     for (auto row : R) {
-//         if (!row.empty()) {
-//             pqxx::field m = row[0];
-//             if (!m.is_null()) {
-//                 string mes = pqxx::to_string(m);
-//                 cout << mes << endl;
-//             }
-//         }
-//     }
-//     W.commit();
-// }
+
+//用于在发消息时显示特定的历史聊天记录
+void ShowMessage(string sender, string receiver, pqxx::connection &c)
+{
+    // transform(receiver.begin(), receiver.end(), receiver.begin(), [](unsigned char c) {
+    //     return tolower(c);
+    // }); //转化receiver为全小写
+    pqxx::work W(c);
+    cout << "now: " << TimeAdd() << ": " << endl;
+    string sql = "select (info,sender) from " + sender + " where sender = " + "'" + receiver + "';";
+    pqxx::result R = W.exec(sql);
+    for (auto row : R) {
+        if (!row.empty()) {
+            pqxx::field m = row[0];
+            if (!m.is_null()) {
+                string mes = pqxx::to_string(m);
+                cout << mes << endl;
+            }
+        }
+    }
+    W.commit();
+    //将查看的消息设置为已读
+    string NewSql = "UPDATE " + sender + " SET isNew = 'NO';";
+    pqxx::work w1(c);
+    w1.exec(NewSql);
+    w1.commit();
+}
 
 //显示未读消息和发送人
 void ShowNewMessage(const string name, pqxx::connection &c)
@@ -315,12 +382,16 @@ void ShowNewMessage(const string name, pqxx::connection &c)
             pqxx::field i = row[0];
             if (!i.is_null()) {
                 string info = pqxx::to_string(i);
-                std::cout << info << std::endl;
+                cout << info << endl;
             }
         }
     }
-
     w.commit();
+    //将查看的消息设置为已读
+    string NewSql = "UPDATE " + name + " SET isNew = 'NO';";
+    pqxx::work w1(c);
+    w1.exec(NewSql);
+    w1.commit();
 }
 //发消息————————————————————————————————————————————————————————————————————————————————————
 
@@ -328,17 +399,17 @@ void selectFunction(std::vector<Person> chat)
 {
     pqxx::connection c = openDB();
 
-    read(c); //从文件中写入数据到类
-    //dataRead(c); //从数据库中读入信息
-    std::string personname, personid, friendname;
-    std::cout << "Login input 1; register as a new user input 2:";
+    //read(c); //从文件中写入数据到类，录入初始化值
+    dataRead(c); //从数据库中读入信息,增删好友时的数据变化可以被捕捉
+    string personname, personid, friendname;
+    cout << "Login input 1; Register as a new user input 2:";
     int q;
-    std::cin >> q;
+    cin >> q;
     if (q == 1) {
         personname = Login(personname, personid);
-        setYes(personname, c);
         if (personname == "*") //用户想要退出
             return;
+        setYes(personname, c);
     } else if (q == 2) {
         newuser(personname, personid, c);
         setYes(personname, c);
@@ -346,67 +417,78 @@ void selectFunction(std::vector<Person> chat)
         cout << "Please choose correct number: ";
         selectFunction(chat);
     }
-    int flag;
-    std::cout << "---------------------------------" << std::endl;
-    std::cout << "- Welcome to the chat room:     -" << std::endl;
-    std::cout << "- 1.查看我的好友                  -" << '\n'
-              << "- 2.加好友                       -" << '\n'
-              << "- 3.删好友                       -" << '\n'
-              << "- 4.发消息                       -" << '\n'
-              << "- 5.查看未读消息                  -" << '\n'
-              << "- 6.保存退出                     -" << std::endl;
-    std::cout << "---------------------------------" << std::endl;
+    cout << "---------------------------------" << endl;
+    cout << "- Welcome to the chat room:     " << endl;
+    cout << "- 1.查看我的好友                  " << '\n'
+         << "- 2.加好友                       " << '\n'
+         << "- 3.删好友                       " << '\n'
+         << "- 4.查看私聊的未读消息                  " << '\n'
+         << "- 5.私聊                       " << '\n'
+         << "- 6.群聊                         " << '\n'
+         << "- 7.保存退出                     " << endl;
+    cout << "---------------------------------" << endl;
     while (true) {
-        std::cout << "Please select: ";
-        std::cin >> flag;
+        int flag;
+        cout << "Please select: ";
+        cin >> flag;
         switch (flag) {
         case (1):
             outputFriend(personname);
             break;
         case (2):
-            std::cout << "Please enter the name of the friend you want to add:";
-            std::cin >> friendname;
+            cout << "Please enter the name of the friend you want to add:";
+            cin >> friendname;
             addFriend(personname, friendname);
             break;
         case (3):
-            std::cout << "Please enter the name of the friend you want to delect:";
-            std::cin >> friendname;
+            cout << "Please enter the name of the friend you want to delect:";
+            cin >> friendname;
             deleteFriend(friendname, personname);
             cout << "删除成功，下列是您的好友列表：" << endl;
             outputFriend(personname);
             break;
         case (4): {
-            std::cout << "请输入你想发送消息的人的名字：";
-            std::string receiver;
-            std::cin >> receiver;
-            std::cout << "可以开始发消息了！输入over结束聊天" << std::endl;
+            cout << "以下是你未读的消息：" << endl;
+            ShowNewMessage(personname, c);
+            cout << "你想要选择其他功能吗？（y/n)";
+            string x;
+            while (cin >> x) {
+                if (x == "y") {
+                    selectFunction(chat);
+                } else if (x == "n") {
+                    break;
+                } else {
+                    cout << "请输入正确的选项-> (y/n)";
+                }
+            }
+        }
+        case (5): {
+            cout << "请输入你想发送消息的人的名字：";
+            string receiver;
+            cin >> receiver;
+            ShowMessage(personname, receiver, c);
+            //显示receiver与personname的历史聊天记录
+            cout << "可以开始发消息了！输入over结束聊天" << endl;
+
             string message;
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            //忽略\n,使第一行读入的字符串不为空
             std::getline(cin, message);
             while (message != "over") {
                 Send(personname, receiver, message, c);
                 std::getline(cin, message);
             }
         } break;
-        case (5): {
-            ShowNewMessage(personname, c);
-            cout << "你想要选择其他功能吗？（Y/N)";
-            string x;
-            while (cin >> x) {
-                if (x == "Y") {
-                    selectFunction(chat);
-                } else if (x == "N") {
-                    break;
-                } else {
-                    cout << "请输入正确的选项-> (Y/N)";
-                }
-            }
+        case (6): {
+            selectGroupsToChat(personname, netizens, c);
         }
-        case (6):
+        case (7):
             setNO(personname, c);
             dataInsert(c);
             return;
         default:
-            std::cout << "Currently, no other features have been developed." << std::endl;
+            cout << "Currently, no other features have been developed." << endl;
+            dataInsert(c);
             break;
         }
     }

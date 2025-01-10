@@ -1,64 +1,43 @@
 #include "person.h"
 #include "chat.h"
-//引用CreateTableForChat(c,naem,id);to read()
+#include "group.h"
+#include "netizen.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <pqxx/pqxx>
 
 extern std::vector<Person> chat;
+extern std::vector<Group> groups;
+extern std::vector<Netizen> netizens;
 
+//构造函数
 Person::Person(std::string name, std::string id) : m_name{name}, m_id{id} {}
 
-//在chat中找到某个人,判断提供的人名是否在chat中
-bool Person::sameName(std::string l_name)
-{
-    if (this->m_name == l_name) {
-        return true;
-    } else
-        return false;
-}
-//返回id，在chat中操作
-std::string Person::returnId(std::string f_name)
-{
-    for (auto &a : chat) {
-        if (a.sameName(f_name)) { return a.m_id; }
-    }
-}
-//添加朋友（从文件读入时）
-void Person::addFriends(std::string l_name, std::string l_id)
-{
-    _friends.emplace_back(l_name, l_id);
-}
-//输出用户信息
-void Person::output()
-{
-    std::cout << m_name << " " << m_id << std::endl;
-}
-//将数据库中的好友信息写入类
+//将数据库中的好友信息写入类，用于data表变动时程序的运行
 void Person::writefriends(std::string fri)
 {
     std::istringstream iss{fri};
     std::string friendname;
-    while (true) {
-        iss >> friendname;
-        if (friendname.size() == 0)
-            return;
+    while (iss >> friendname) {
         for (auto &a : chat) {
-            if (a.sameName(friendname))
+            if (a.m_name == friendname) //如果chat数组中有这个好友的名字
+            {
                 this->_friends.emplace_back(friendname, a.m_id);
+            }
         }
     }
 }
-//返回类中好友的名字
+
+//返回chat中好友的名字
 std::string Person::returnfriendname()
 {
-    std::string frin;
+    std::string frin{};
     for (auto &k : this->_friends) {
-        frin = frin + k.m_name;
+        frin = frin + k.m_name + " ";
     }
     return frin;
 }
+
 //输出用户好友信息，从类中操作
 void Person::outputFriends()
 {
@@ -70,6 +49,7 @@ void Person::outputFriends()
         std::cout << '\n';
     }
 }
+
 //加好友，在chat数组中操作
 void Person::addFriend(std::string b_name)
 {
@@ -82,32 +62,7 @@ void Person::addFriend(std::string b_name)
         }
     }
 }
-//将用户的id和name连成字符串
-std::string Person::to_string()
-{
-    std::string inf = m_id + " " + m_name;
-    return inf;
-}
-//friends表？
-void Person::dataInter(pqxx::connection &c)
-{
-    for (auto &a : this->_friends) {
-        std::string sql = "insert into " + this->m_name + "friends(friend) values('" + a.m_name + "');";
-        pqxx::work w(c);
-        w.exec(sql);
-        w.commit();
-    }
-}
-//覆盖好友表中的内容
-void Person::friendcover(pqxx::connection &c)
-{
-    for (auto &t : this->_friends) {
-        std::string del = "truncate table " + t.m_name + ";"; //"friends;";
-        pqxx::work w(c);
-        w.exec(del);
-        w.commit();
-    }
-}
+
 //删好友,从类中操作
 void Person::deleteFriends(std::string friendname)
 {
@@ -118,35 +73,76 @@ void Person::deleteFriends(std::string friendname)
         a++;
     }
 }
+
+//——————————————————————————————————————————————————————————————————————————————————————
+//将用户的id和name连成字符串
+std::string Person::to_string()
+{
+    std::string inf = m_id + " " + m_name;
+    return inf;
+}
+
+//输出用户信息
+void Person::output()
+{
+    std::cout << m_name << " " << m_id << std::endl;
+}
+
 //getter
 std::string Person::returnname()
 {
     return m_name;
 }
+//——————————————————————————————————————————————————————————————————————————————————————
+
+//在chat中找到某个人,判断提供的人名是否在chat中
+bool Person::sameName(std::string l_name)
+{
+    return this->m_name == l_name;
+}
+
+//添加朋友（从文件读入时）
+void Person::addFriends(std::string l_name, std::string l_id)
+{
+    _friends.emplace_back(l_name, l_id);
+}
+
+//如果名字存在，返回id，在chat中操作
+std::string Person::returnId(std::string f_name)
+{
+    for (auto &a : chat) {
+        if (a.sameName(f_name)) {
+            return a.m_id;
+        }
+    }
+}
+
 //从已有文件中读取数据到类
 void read(pqxx::connection &c)
 {
     std::ifstream ifs("../../data.dat");
+    //未进行错误处理
     std::string line;
-    while (getline(ifs, line)) {
+    while (std::getline(ifs, line)) {
         if (line.empty()) { break; }
         std::istringstream iss{line};
         std::string l_id;
         iss >> l_id;
-        std::string l_name, f_name;
+        std::string l_name;
         iss >> l_name;
         chat.emplace_back(l_name, l_id);
-        //用户注册，创建用户用于聊天的表
+        netizens.emplace_back(l_name, l_id);
+        //用户注册，创建用户用于聊天的表&存储用户信息和朋友的data表
         CreateTableForChat(c, l_name, l_id);
     }
-    while (getline(ifs, line)) {
+    while (std::getline(ifs, line)) {
         std::istringstream iss{line};
         std::string l_name;
         std::string li;
         iss >> l_name;
         for (auto &n : chat) {
             if (n.sameName(l_name)) {
-                while (getline(ifs, li)) {
+                while (std::getline(ifs, li)) {
                     if (li.empty()) break;
                     for (auto &a : chat) {
                         if (a.sameName(li)) {
@@ -163,29 +159,3 @@ void read(pqxx::connection &c)
 
     ifs.close();
 }
-// //输出用户的朋友信息到文件
-// void Person::tooFriend()
-// {
-//     if (this->_friends.size() != 0) {
-//         std::ofstream ofs("../../l.dat", std::ios_base::app);
-//         ofs << " " << std::endl;
-//         ofs << this->m_name << " friends" << std::endl;
-//         for (auto &t : this->_friends) {
-//             ofs << t.m_name << std::endl;
-//         }
-//         ofs.close();
-//     }
-// }
-// //输出用户信息，依次输出id,name,friends
-// void write()
-// {
-//     std::ofstream ofs("../../l.dat");
-//     for (auto &g : chat) {
-//         std::string ni = g.to_string();
-//         ofs << ni << std::endl;
-//     }
-//     ofs.close();
-//     for (auto &e : chat) {
-//         e.tooFriend();
-//     }
-// }
