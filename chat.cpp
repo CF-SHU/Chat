@@ -1,6 +1,5 @@
-#include "chat.h"
-#include "person.h"
 #include "netizen.h"
+#include "chat.h"
 #include <iostream>
 using std::cerr;
 using std::cin;
@@ -17,7 +16,6 @@ using std::string;
 // #include <cctype>
 // using std::tolower;
 
-extern std::vector<Person> chat;
 extern std::vector<Netizen> netizens;
 extern std::vector<Group> groups;
 //连接数据库
@@ -35,6 +33,18 @@ pqxx::connection openDB()
 
 //————————————————————————————————————————————————————————————————————————————————————
 
+//群聊菜单
+void menuGroups()
+{
+    cout << "---------------------------------" << endl;
+    cout << "- Welcome to the  group chat room:     " << endl;
+    cout << "- 1.创建群聊             " << '\n'
+         << "- 2.加入群聊                      " << '\n'
+         << "- 3.选择群聊进行聊天                      " << '\n'
+         << "- 4.退出                    " << endl;
+    cout << "---------------------------------" << endl;
+}
+
 void selectGroupsToChat(std::string personname, std::vector<Netizen> netizens, pqxx::connection &A)
 {
     Netizen *n = nullptr;
@@ -44,34 +54,32 @@ void selectGroupsToChat(std::string personname, std::vector<Netizen> netizens, p
             break;
         }
     } //对网民的一个指针赋值
-    std::cout << "---------------------------------" << std::endl;
-    std::cout << "- Welcome to the  group chat room:     " << std::endl;
-    std::cout << "- 1.创建群聊             " << '\n'
-              << "- 2.加入群聊                      " << '\n'
-              << "- 3.选择群聊进行聊天                      " << '\n'
-              << "- 4.退出                    " << std::endl;
-    std::cout << "---------------------------------" << std::endl;
-
+    menuGroups();
     int flag;
     while (true) {
-        std::cin >> flag;
+        cout << "Please select: ";
+        cin >> flag;
         switch (flag) {
         case 1:
             n->createGroup(A);
-            std::cout << "已退出创建群聊" << std::endl;
+            cout << "创建群聊成功，已退出创建群聊!" << endl;
             break;
         case 2:
             n->joinGroup(A);
-            std::cout << "已退出加入群聊" << std::endl;
+            cout << "加入群聊成功!" << endl;
             break;
         case 3:
             n->chooseGroupToChat(A);
-            std::cout << "已退出聊天" << std::endl;
+            break;
+        case 4:
+            cout << "已成功退出!" << endl;
             break;
         default:
-            std::cout << "已成功退出" << std::endl;
+            cout << "请输入正确的数字选择->（1/2/3/4）" << endl;
             break;
         }
+        if (flag == 4)
+            return;
     }
 }
 
@@ -90,35 +98,32 @@ string TimeAdd()
 }
 //————————————————————————————————————————————————————————————————————————————————————
 
-//查看登陆用户的好友信息，从chat数组中操作
+//查看登陆用户的好友信息，从netizens数组中操作
 void outputFriend(string name)
 {
-    if (chat.size() == 0) { //用不了？
-        cout << "You don't have any firends yet." << endl;
-    }
-    for (auto &c : chat) {
+    for (auto &c : netizens) {
         if (c.sameName(name)) {
             c.outputFriends();
         }
     }
 }
 
-//判断名字是否相同，从chat数组中操作，用于addFriend()，Judgelogin函数
+//判断名字是否相同，从netizens数组中操作，用于addFriend()，Judgelogin函数
 bool nameS(string personname)
 {
-    for (auto &d : chat) {
+    for (auto &d : netizens) {
         if (d.sameName(personname))
             return true;
     }
     return false;
 }
 
-//添加好友，从chat数组中判断是否有该人的名字，然后从类引用addFriend函数
+//添加好友，从netizens数组中判断是否有该人的名字，然后从类引用addFriend函数
 //a_name 发送加好友申请的用户，b_name 想加的好友的名字
 void addFriend(string a_name, string b_name)
 {
     if (nameS(b_name)) {
-        for (auto &a : chat) {
+        for (auto &a : netizens) {
             if (a.sameName(a_name)) {
                 a.addFriend(b_name);
                 break;
@@ -132,7 +137,7 @@ void addFriend(string a_name, string b_name)
 //删好友,在类中操作
 void deleteFriend(string friendname, string personname)
 {
-    for (auto &c : chat) {
+    for (auto &c : netizens) {
         if (c.sameName(personname)) {
             c.deleteFriends(friendname);
         }
@@ -153,18 +158,18 @@ bool Judgelogin(string personname)
 //用户登陆
 string Login(string personname, string personid)
 {
-    std::cout << "Please enter your name and ID!" << '\n' << "Your name:";
+    std::cout << "请输入您的名字和ID号!" << '\n' << "您的名字是:";
     std::cin >> personname;
-    std::cout << "Your ID:";
+    std::cout << "您的ID号是:";
     std::cin >> personid;
     while (!Judgelogin(personname)) {
-        cout << "Your name is incorrect, You want to re-enter?(y/n): ";
+        cout << "您的名字是不正确的，您想要重新输入吗?(y/n): ";
         string answer;
         cin >> answer;
         if (answer == "y") {
             personname = Login(personname, personid);
         } else if (answer == "n") {
-            cout << "You are exitting the chat..." << endl;
+            cout << "您正在退出程序..." << endl;
             return "*";
             //'*'用于判断用户是否想要继续登陆
         }
@@ -172,23 +177,23 @@ string Login(string personname, string personid)
     return personname;
 }
 
-//用户注册，从chat中操作
+//用户注册，从netizens中操作
 void newuser(std::string personname, std::string personid, pqxx::connection &c)
 {
-    std::cout << "Please enter your name:";
+    std::cout << "您的名字是: ";
     std::cin >> personname;
-    std::cout << "Please enter your id:";
+    std::cout << "您的ID号是: ";
     std::cin >> personid;
-    for (auto &r : chat) {
+    for (auto &r : netizens) {
         if (r.sameName(personname)) {
-            std::cout << "You already have an account. Please choose to log in." << std::endl;
+            std::cout << "您的账户已经注册过了，请选择登陆！" << std::endl;
             Login(personname, personid);
             return;
         }
     }
-    chat.emplace_back(personname, personid);
+    netizens.emplace_back(personname, personid);
     CreateTableForChat(c, personname, personid); //创建用户表
-    std::cout << "Successfully registered" << std::endl;
+    std::cout << "注册成功！" << std::endl;
 }
 
 //————————————————————————————————————————————————————————————————————————————————————
@@ -202,11 +207,11 @@ void dataCover(pqxx::connection &c, string tableName)
     w.commit();
 }
 
-//将chat数组中有关用户的信息全部写入数据库中的data表中，用于程序结束
+//将netizens数组中有关用户的信息全部写入数据库中的data表中，用于程序结束
 void dataInsert(pqxx::connection &c)
 {
     dataCover(c, "data");
-    for (auto &a : chat) {
+    for (auto &a : netizens) {
         std::string name = a.returnname();
         std::string id = a.returnId(name);
         std::string friendname = a.returnfriendname();
@@ -220,27 +225,26 @@ void dataInsert(pqxx::connection &c)
     }
 }
 
-//从数据库中读取用户信息到chat数组，用于程序开始
+//从数据库中读取用户信息到netizens数组，用于程序开始
 void dataRead(pqxx::connection &c)
 {
     std::string s = "SELECT id,name,friends from data;";
     pqxx::work w(c);
     pqxx::result res = w.exec(s);
-    chat.clear(); //清空列表
+    netizens.clear(); //清空列表
     for (auto re : res) {
         std::string l_id;
         l_id = re["id"].c_str();
         std::string l_name;
         l_name = re["name"].c_str();
-        chat.emplace_back(l_id, l_name);
-        //？不是?person类是先name,再id的吗？？？？？？？？？？？？？？？？
-        //???????????????????????????????????????????????????????????????????????????????????????
+        netizens.emplace_back(l_id, l_name);
+        //netizens.emplace_back(l_name, l_id);error
     }
     int i = 0; //计数器
     for (auto re : res) {
         std::string fri = re["friends"].c_str();
         //fri是一大串名字
-        chat[i].writefriends(fri);
+        netizens[i].writefriends(fri);
         //因为是一行一行处理的表值，所以用i来计数，如果fri为空，writefriends就直接跳过
         i++;
     }
@@ -395,14 +399,35 @@ void ShowNewMessage(const string name, pqxx::connection &c)
 }
 //发消息————————————————————————————————————————————————————————————————————————————————————
 
-void selectFunction(std::vector<Person> chat)
+//主菜单
+void menuMain()
+{
+    cout << "---------------------------------" << endl;
+    cout << "- Welcome to the chat room:     " << endl;
+    cout << "- 1.查看我的好友                  " << '\n'
+         << "- 2.加好友                       " << '\n'
+         << "- 3.删好友                       " << '\n'
+         << "- 4.查看私聊的未读消息                  " << '\n'
+         << "- 5.私聊                       " << '\n'
+         << "- 6.群聊                         " << '\n'
+         << "- 7.保存退出                     " << endl;
+    cout << "---------------------------------" << endl;
+}
+
+void selectFunction(std::vector<Netizen> chat)
 {
     pqxx::connection c = openDB();
 
-    //read(c); //从文件中写入数据到类，录入初始化值
+    /*
+     * 这一步是提供给第一次使用该程序的用户
+     * 如果需要从文件录入初始信息，则使用该代码，之后的程序就可以注释该代码以确保不破坏已更改数据的数据库
+     * 这里我们假设已经初始化录入了数据，您的postgresql数据库中已经有了程序数据库的信息
+    read(c);       //从文件中写入数据到类，录入初始化值
+    dataInsert(c); //将数据同步到数据库的data表中
+*/
     dataRead(c); //从数据库中读入信息,增删好友时的数据变化可以被捕捉
     string personname, personid, friendname;
-    cout << "Login input 1; Register as a new user input 2:";
+    cout << "登陆选 1; 作为新用户注册选 2: ";
     int q;
     cin >> q;
     if (q == 1) {
@@ -414,19 +439,10 @@ void selectFunction(std::vector<Person> chat)
         newuser(personname, personid, c);
         setYes(personname, c);
     } else {
-        cout << "Please choose correct number: ";
+        cout << "请输入正确的数字->（1/2）: ";
         selectFunction(chat);
     }
-    cout << "---------------------------------" << endl;
-    cout << "- Welcome to the chat room:     " << endl;
-    cout << "- 1.查看我的好友                  " << '\n'
-         << "- 2.加好友                       " << '\n'
-         << "- 3.删好友                       " << '\n'
-         << "- 4.查看私聊的未读消息                  " << '\n'
-         << "- 5.私聊                       " << '\n'
-         << "- 6.群聊                         " << '\n'
-         << "- 7.保存退出                     " << endl;
-    cout << "---------------------------------" << endl;
+    menuMain();
     while (true) {
         int flag;
         cout << "Please select: ";
@@ -436,12 +452,12 @@ void selectFunction(std::vector<Person> chat)
             outputFriend(personname);
             break;
         case (2):
-            cout << "Please enter the name of the friend you want to add:";
+            cout << "请输入你想添加的好友的名字: ";
             cin >> friendname;
             addFriend(personname, friendname);
             break;
         case (3):
-            cout << "Please enter the name of the friend you want to delect:";
+            cout << "请输入你想删除的好友的名字: ";
             cin >> friendname;
             deleteFriend(friendname, personname);
             cout << "删除成功，下列是您的好友列表：" << endl;
@@ -450,25 +466,26 @@ void selectFunction(std::vector<Person> chat)
         case (4): {
             cout << "以下是你未读的消息：" << endl;
             ShowNewMessage(personname, c);
-            cout << "你想要选择其他功能吗？（y/n)";
+            cout << "\n你想要选择其他功能吗？（y/n): ";
             string x;
             while (cin >> x) {
                 if (x == "y") {
-                    selectFunction(chat);
-                } else if (x == "n") {
+                    menuMain();
                     break;
+                } else if (x == "n") {
+                    return;
                 } else {
-                    cout << "请输入正确的选项-> (y/n)";
+                    cout << "请输入正确的选项-> (y/n) ";
                 }
             }
-        }
+        } break;
         case (5): {
             cout << "请输入你想发送消息的人的名字：";
             string receiver;
             cin >> receiver;
             ShowMessage(personname, receiver, c);
             //显示receiver与personname的历史聊天记录
-            cout << "可以开始发消息了！输入over结束聊天" << endl;
+            cout << "可以开始发消息了！(输入over结束聊天)" << endl;
 
             string message;
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -481,14 +498,15 @@ void selectFunction(std::vector<Person> chat)
         } break;
         case (6): {
             selectGroupsToChat(personname, netizens, c);
+            menuMain();
+            break;
         }
         case (7):
             setNO(personname, c);
             dataInsert(c);
             return;
         default:
-            cout << "Currently, no other features have been developed." << endl;
-            dataInsert(c);
+            cout << "请输入正确的数字->（1/2/3/4/5/6/7）" << endl;
             break;
         }
     }

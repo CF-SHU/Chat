@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(chat
     main.cpp
-    person.h person.cpp
+
     chat.h chat.cpp
     data.dat
     group.h group.cpp

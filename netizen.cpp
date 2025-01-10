@@ -1,5 +1,6 @@
 #include "netizen.h"
 #include "group.h"
+#include "chat.h"
 #include <string>
 using std::string;
 #include <iostream>
@@ -15,13 +16,144 @@ extern std::vector<Group> groups;
 extern std::vector<Netizen> netizens;
 
 //构造函数
-Netizen::Netizen(string id, string name) : m_id{id}, m_name{name} {}
+Netizen::Netizen(string name, string id) : m_name{name}, m_id{id} {}
+
+//将数据库中的好友信息写入类，用于data表变动时程序的运行
+void Netizen::writefriends(std::string fri)
+{
+    std::istringstream iss{fri};
+    std::string friendname;
+    while (iss >> friendname) {
+        for (auto &a : netizens) {
+            if (a.m_name == friendname) //如果chat数组中有这个好友的名字
+            {
+                this->_friends.emplace_back(friendname, a.m_id);
+            }
+        }
+    }
+}
+
+//返回netizen中好友的名字
+std::string Netizen::returnfriendname()
+{
+    std::string frin{};
+    for (auto &k : this->_friends) {
+        frin = frin + k.m_name + " ";
+    }
+    return frin;
+}
+
+//输出用户好友信息，从类中操作
+void Netizen::outputFriends()
+{
+    if (_friends.size() != 0) {
+        std::cout << this->m_name << "的朋友有:" << '\n';
+        for (auto &d : _friends) {
+            std::cout << d.m_name << std::endl;
+        }
+        std::cout << '\n';
+    } else {
+        std::cout << "您现在还没有朋友！\n" << std::endl;
+    }
+}
+
+//加好友，在netizen数组中操作
+void Netizen::addFriend(std::string b_name)
+{
+    for (auto &b : netizens) {
+        if (b.m_name == b_name) {
+            this->_friends.emplace_back(b.m_name, b.m_id);
+            b._friends.emplace_back(this->m_name, this->m_id);
+            std::cout << "添加朋友成功！" << std::endl;
+            break;
+        }
+    }
+}
+
+//删好友,从类中操作
+void Netizen::deleteFriends(std::string friendname)
+{
+    int a = 0;
+    for (auto &c : this->_friends) {
+        if (c.sameName(friendname))
+            _friends.erase(_friends.begin() + a);
+        a++;
+    }
+}
+
+//——————————————————————————————————————————————————————————————————————————————————————
+//将用户的id和name连成字符串
+std::string Netizen::to_string()
+{
+    std::string inf = m_id + " " + m_name;
+    return inf;
+}
+
+//输出用户信息
+void Netizen::output()
+{
+    std::cout << m_name << " " << m_id << std::endl;
+}
+
+//getter
+std::string Netizen::returnname()
+{
+    return m_name;
+}
+//——————————————————————————————————————————————————————————————————————————————————————
+
+//从已有文件中读取数据到类
+void read(pqxx::connection &c)
+{
+    std::ifstream ifs("../../data.dat");
+    //未进行错误处理
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.empty()) {
+            break;
+        }
+        std::istringstream iss{line};
+        std::string l_id;
+        iss >> l_id;
+        std::string l_name;
+        iss >> l_name;
+        netizens.emplace_back(l_name, l_id);
+        //用户注册，创建用户用于聊天的表&存储用户信息和朋友的data表
+        CreateTableForChat(c, l_name, l_id);
+    }
+    while (std::getline(ifs, line)) {
+        std::istringstream iss{line};
+        std::string l_name;
+        std::string li;
+        iss >> l_name;
+        for (auto &n : netizens) {
+            if (n.sameName(l_name)) {
+                while (std::getline(ifs, li)) {
+                    if (li.empty())
+                        break;
+                    for (auto &a : netizens) {
+                        if (a.sameName(li)) {
+                            std::string l_id = a.returnId(li);
+                            n.addFriends(li, l_id);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    ifs.close();
+}
 
 //判断是否是相同的名字，用于判断用户是否存在
 bool Netizen::sameName(std::string l_name)
 {
     return m_name == l_name;
+    //return this->m_name == l_name;
 }
+
 //返回网民的id,在netizens全局数组中操作
 string Netizen::returnId(std::string f_name)
 {
@@ -30,6 +162,11 @@ string Netizen::returnId(std::string f_name)
             return a.m_id;
         }
     }
+}
+
+void Netizen::addFriends(std::string l_name, std::string l_id)
+{
+    _friends.emplace_back(l_name, l_id);
 }
 
 //创建群聊聊天表
@@ -67,7 +204,7 @@ void Netizen::createGroup(pqxx::connection &A)
     W3.commit();
 }
 
-//从数据库中查看已创建的群聊列表 并 将群名加入groups全局数组中
+//从数据库中查看已创建的群聊列表, 并将群名加入groups全局数组中
 void Netizen::checkGroups(pqxx::connection &A)
 {
     // 查询并打印群聊列表
@@ -93,7 +230,6 @@ void Netizen::joinGroup(pqxx::connection &A)
     for (auto &g : groups) {
         if (g.addNetizen(groupname, this)) {
             _groups.push_back(&g);
-            cout << "加入群聊成功！" << endl;
             return;
         }
     }
@@ -110,7 +246,7 @@ void Netizen::chooseGroupToChat(pqxx::connection &A)
     string groupname;
     cout << "请输入要加入聊天的群聊名称：" << endl;
     cin >> groupname;
-    cout << "可以开始聊天了！" << endl;
+    cout << "可以开始聊天了！(输入over结束聊天）" << endl;
     //开始聊天
     chat(A, groupname);
 
@@ -120,7 +256,7 @@ void Netizen::chooseGroupToChat(pqxx::connection &A)
     if (a == "y") {
         chat(A, groupname);
     } else {
-        cout << "已退出聊天." << endl;
+        cout << "已退出聊天!" << endl;
     }
 }
 //聊天，先显示新消息，输入over结束聊天
