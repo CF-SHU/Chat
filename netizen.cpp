@@ -1,3 +1,4 @@
+//netizen具体函数实现以及聊天功能
 #include "netizen.h"
 #include "group.h"
 #include "chat.h"
@@ -70,6 +71,12 @@ void Netizen::addFriend(std::string b_name)
     }
 }
 
+//添加朋友（read函数中使用，从文件读入时）
+void Netizen::addFriends(std::string l_name, std::string l_id)
+{
+    _friends.emplace_back(l_name, l_id);
+}
+
 //删好友,从类中操作
 void Netizen::deleteFriends(std::string friendname)
 {
@@ -81,7 +88,6 @@ void Netizen::deleteFriends(std::string friendname)
     }
 }
 
-//——————————————————————————————————————————————————————————————————————————————————————
 //将用户的id和name连成字符串
 std::string Netizen::to_string()
 {
@@ -100,52 +106,6 @@ std::string Netizen::returnname()
 {
     return m_name;
 }
-//——————————————————————————————————————————————————————————————————————————————————————
-
-//从已有文件中读取数据到类
-void read(pqxx::connection &c)
-{
-    std::ifstream ifs("../../data.dat");
-    //未进行错误处理
-    std::string line;
-    while (std::getline(ifs, line)) {
-        if (line.empty()) {
-            break;
-        }
-        std::istringstream iss{line};
-        std::string l_id;
-        iss >> l_id;
-        std::string l_name;
-        iss >> l_name;
-        netizens.emplace_back(l_name, l_id);
-        //用户注册，创建用户用于聊天的表&存储用户信息和朋友的data表
-        CreateTableForChat(c, l_name, l_id);
-    }
-    while (std::getline(ifs, line)) {
-        std::istringstream iss{line};
-        std::string l_name;
-        std::string li;
-        iss >> l_name;
-        for (auto &n : netizens) {
-            if (n.sameName(l_name)) {
-                while (std::getline(ifs, li)) {
-                    if (li.empty())
-                        break;
-                    for (auto &a : netizens) {
-                        if (a.sameName(li)) {
-                            std::string l_id = a.returnId(li);
-                            n.addFriends(li, l_id);
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    ifs.close();
-}
 
 //判断是否是相同的名字，用于判断用户是否存在
 bool Netizen::sameName(std::string l_name)
@@ -163,11 +123,7 @@ string Netizen::returnId(std::string f_name)
         }
     }
 }
-
-void Netizen::addFriends(std::string l_name, std::string l_id)
-{
-    _friends.emplace_back(l_name, l_id);
-}
+//——————————————————————————————————————————————————————————————————————————————————————
 
 //创建群聊聊天表
 void Netizen::createGroup(pqxx::connection &A)
@@ -185,7 +141,9 @@ void Netizen::createGroup(pqxx::connection &A)
     for (auto &g : groups) {
         if (g.Judge(groupname, this)) //判断群聊名是否存在，存在就加入_groups
         {
-            _groups.push_back(&g);
+            Group *ptr = new Group(g);
+            _groups.push_back(ptr);
+            //_groups.push_back(&g);
         }
     }
 
@@ -207,6 +165,13 @@ void Netizen::createGroup(pqxx::connection &A)
 //从数据库中查看已创建的群聊列表, 并将群名加入groups全局数组中
 void Netizen::checkGroups(pqxx::connection &A)
 {
+    { //这一步用于确保groups表存在
+        //在数据库中创建一个表用于保存已经创建的群聊名称
+        string sql1 = "CREATE TABLE IF NOT EXISTS groups (name varchar(300) NOT NULL);";
+        pqxx::work W(A);
+        W.exec(sql1);
+        W.commit();
+    }
     // 查询并打印群聊列表
     string sql = "SELECT * FROM groups;";
     pqxx::work W(A);
@@ -218,11 +183,16 @@ void Netizen::checkGroups(pqxx::connection &A)
         groups.emplace_back(groupname);
     }
 }
+
 //加入群聊，将选择的群聊对象加入到该网民的_groups里，并将该网民加入到群聊对象的_netizens里
 void Netizen::joinGroup(pqxx::connection &A)
 {
     //展示群聊列表
     checkGroups(A);
+    if (groups.size() == 0) {
+        cout << "当前没有已创建好的群聊，正在退出加入群聊功能..." << endl;
+        return;
+    }
     //请选择你要加入聊天的群聊
     cout << "请输入你想加入的群聊：" << endl;
     string groupname;
@@ -230,6 +200,7 @@ void Netizen::joinGroup(pqxx::connection &A)
     for (auto &g : groups) {
         if (g.addNetizen(groupname, this)) {
             _groups.push_back(&g);
+            cout << "加入群聊成功!" << endl;
             return;
         }
     }
@@ -239,8 +210,9 @@ void Netizen::joinGroup(pqxx::connection &A)
 //选择群聊聊天
 void Netizen::chooseGroupToChat(pqxx::connection &A)
 {
+    cout << "以下是您已经加入过的群聊：" << endl;
     //展示类里面已经加入的群聊
-    for (auto g : _groups) {
+    for (auto &g : _groups) {
         g->checkName();
     }
     string groupname;
@@ -259,6 +231,7 @@ void Netizen::chooseGroupToChat(pqxx::connection &A)
         cout << "已退出聊天!" << endl;
     }
 }
+
 //聊天，先显示新消息，输入over结束聊天
 void Netizen::chat(pqxx::connection &A, string groupname)
 {
@@ -271,6 +244,7 @@ void Netizen::chat(pqxx::connection &A, string groupname)
         this->insertInformation(A, groupname, information);
     }
 }
+
 //插入信息，包括发送人的名字，发送的消息，发送时间，以及是否是新消息
 void Netizen::insertInformation(pqxx::connection &A, string tablename, string information)
 {
@@ -317,4 +291,50 @@ void Netizen::watchNotRead(pqxx::connection &A, string tablename)
         // 如果出现异常，则更新失败了
         cerr << "Update failed: " << e.what() << endl;
     }
+}
+//——————————————————————————————————————————————————————————————————————————————————————
+
+//从已有文件中读取数据到类
+void read(pqxx::connection &c)
+{
+    std::ifstream ifs("../../data.dat");
+    //未进行错误处理
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.empty()) {
+            break;
+        }
+        std::istringstream iss{line};
+        std::string l_id;
+        iss >> l_id;
+        std::string l_name;
+        iss >> l_name;
+        netizens.emplace_back(l_name, l_id);
+        //用户注册，创建用户用于聊天的表&存储用户信息和朋友的data表
+        CreateTableForChat(c, l_name, l_id);
+    }
+    while (std::getline(ifs, line)) {
+        std::istringstream iss{line};
+        std::string l_name;
+        std::string li;
+        iss >> l_name;
+        for (auto &n : netizens) {
+            if (n.sameName(l_name)) {
+                while (std::getline(ifs, li)) {
+                    if (li.empty())
+                        break;
+                    for (auto &a : netizens) {
+                        if (a.sameName(li)) {
+                            std::string l_id = a.returnId(li);
+                            n.addFriends(li, l_id);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    ifs.close();
 }

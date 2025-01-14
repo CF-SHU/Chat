@@ -1,5 +1,6 @@
-#include "netizen.h"
+//函数具体实现
 #include "group.h"
+#include "netizen.h"
 #include <string>
 using std::string;
 #include <iostream>
@@ -36,6 +37,13 @@ void Group::checkName()
 {
     cout << this->m_name << endl;
 }
+
+//getter groupname
+string Group::getName()
+{
+    return this->m_name;
+}
+
 //判断是否存在这个群聊,如果存在就返回true并添加该群成员
 bool Group::Judge(string groupname, Netizen *n)
 {

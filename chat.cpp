@@ -1,5 +1,6 @@
-#include "netizen.h"
+//主要选择函数及数据表的设计实现
 #include "chat.h"
+#include "netizen.h"
 #include <iostream>
 using std::cerr;
 using std::cin;
@@ -21,7 +22,7 @@ extern std::vector<Group> groups;
 //连接数据库
 pqxx::connection openDB()
 {
-    pqxx::connection c("dbname=chat user=ch password=123456 hostaddr=127.0.0.1 port=5432");
+    pqxx::connection c("dbname=chat user=ChatManager password=123456 hostaddr=127.0.0.1 port=5432");
     if (c.is_open()) {
         cout << "Opened database successfully:" << c.dbname() << endl;
     } else {
@@ -32,6 +33,119 @@ pqxx::connection openDB()
 }
 
 //————————————————————————————————————————————————————————————————————————————————————
+//主菜单
+void menuMain()
+{
+    cout << "---------------------------------" << endl;
+    cout << "- Welcome to the chat room:     " << endl;
+    cout << "- 1.查看我的好友                  " << '\n'
+         << "- 2.加好友                       " << '\n'
+         << "- 3.删好友                       " << '\n'
+         << "- 4.查看私聊的未读消息                  " << '\n'
+         << "- 5.私聊                       " << '\n'
+         << "- 6.群聊                         " << '\n'
+         << "- 7.保存退出                     " << endl;
+    cout << "---------------------------------" << endl;
+}
+
+void selectFunction()
+{
+    pqxx::connection c = openDB();
+
+    /*
+     * 这一步是提供给第一次使用该程序的用户
+     * 如果需要从文件录入初始信息，则使用该代码，之后的程序就可以注释该代码以确保不破坏已更改数据的数据库
+     * 这里我们假设已经初始化录入了数据，您的postgresql数据库中已经有了程序数据库的信息
+    read(c);       //从文件中写入数据到类，录入初始化值
+    dataInsert(c); //将数据同步到数据库的data表中
+*/
+    dataRead(c); //从数据库中读入信息,增删好友时的数据变化可以被捕捉
+    string personname, personid, friendname;
+    cout << "登陆选 1; 作为新用户注册选 2: ";
+    int q;
+    cin >> q;
+    if (q == 1) {
+        personname = Login(personname, personid);
+        if (personname == "*") //用户想要退出
+            return;
+        setYes(personname, c);
+    } else if (q == 2) {
+        newuser(personname, personid, c);
+        setYes(personname, c);
+    } else {
+        cout << "请输入正确的数字->（1/2）: ";
+        selectFunction();
+    }
+    menuMain();
+    while (true) {
+        int flag;
+        cout << "Please select: ";
+        cin >> flag;
+        switch (flag) {
+        case (1):
+            outputFriend(personname);
+            break;
+        case (2):
+            cout << "请输入你想添加的好友的名字: ";
+            cin >> friendname;
+            addFriend(personname, friendname);
+            break;
+        case (3):
+            cout << "请输入你想删除的好友的名字: ";
+            cin >> friendname;
+            deleteFriend(friendname, personname);
+            cout << "删除成功，下列是您的好友列表：" << endl;
+            outputFriend(personname);
+            break;
+        case (4): {
+            cout << "以下是你未读的消息：" << endl;
+            ShowNewMessage(personname, c);
+            cout << "\n你想要选择其他功能吗？（y/n): ";
+            string x;
+            while (cin >> x) {
+                if (x == "y") {
+                    menuMain();
+                    break;
+                } else if (x == "n") {
+                    dataInsert(c);
+                    return;
+                } else {
+                    cout << "请输入正确的选项-> (y/n) ";
+                }
+            }
+        } break;
+        case (5): {
+            cout << "请输入你想发送消息的人的名字：";
+            string receiver;
+            cin >> receiver;
+            ShowMessage(personname, receiver, c);
+            //显示receiver与personname的历史聊天记录
+            cout << "可以开始发消息了！(输入over结束聊天)" << endl;
+
+            string message;
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            //忽略\n,使第一行读入的字符串不为空
+            std::getline(cin, message);
+            while (message != "over") {
+                Send(personname, receiver, message, c);
+                std::getline(cin, message);
+            }
+        } break;
+        case (6): {
+            selectGroupsToChat(personname, c);
+            menuMain();
+            break;
+        }
+        case (7):
+            setNO(personname, c);
+            dataInsert(c);
+            return;
+        default:
+            cout << "请输入正确的数字->（1/2/3/4/5/6/7）" << endl;
+            break;
+        }
+    }
+}
 
 //群聊菜单
 void menuGroups()
@@ -45,7 +159,7 @@ void menuGroups()
     cout << "---------------------------------" << endl;
 }
 
-void selectGroupsToChat(std::string personname, std::vector<Netizen> netizens, pqxx::connection &A)
+void selectGroupsToChat(std::string personname, pqxx::connection &A)
 {
     Netizen *n = nullptr;
     for (auto &a : netizens) {
@@ -66,7 +180,6 @@ void selectGroupsToChat(std::string personname, std::vector<Netizen> netizens, p
             break;
         case 2:
             n->joinGroup(A);
-            cout << "加入群聊成功!" << endl;
             break;
         case 3:
             n->chooseGroupToChat(A);
@@ -212,11 +325,11 @@ void dataInsert(pqxx::connection &c)
 {
     dataCover(c, "data");
     for (auto &a : netizens) {
-        std::string name = a.returnname();
-        std::string id = a.returnId(name);
-        std::string friendname = a.returnfriendname();
-        std::string sql = "insert into data(id,name,friends) values('" + name + "','" + id + "','"
-                          + friendname + "');";
+        string name = a.returnname();
+        string id = a.returnId(name);
+        string friendname = a.returnfriendname();
+        string sql = "insert into data(id,name,friends) values('" + name + "','" + id + "','"
+                     + friendname + "');";
         //实际上为了data表的灵活性，应该使表的名字为变量，然后加入sql语句的
         //不过这里因为用户不需要看到表，那么就假设数据表的名称叫data
         pqxx::work w(c);
@@ -324,7 +437,7 @@ void Send(string sender, string receiver, string message, pqxx::connection &c)
     } else {
         isNew = "NO"; //如果receiver在线，那么message对receiver来说就是已读的消息
     }
-    string flag = "insert into " + receiver + "(info) values('New massages:');";
+    string flag = "insert into " + receiver + "(info) values('New messages:');";
     string currentTime = "insert into " + receiver + "(info,sender,isNew) values('" + TimeAdd()
                          + "','" + sender + "','YES');";
     //未读标签与时间显示(时间显示是对receiver不在线的专属,未读那么isNew一定是YES
@@ -399,115 +512,3 @@ void ShowNewMessage(const string name, pqxx::connection &c)
 }
 //发消息————————————————————————————————————————————————————————————————————————————————————
 
-//主菜单
-void menuMain()
-{
-    cout << "---------------------------------" << endl;
-    cout << "- Welcome to the chat room:     " << endl;
-    cout << "- 1.查看我的好友                  " << '\n'
-         << "- 2.加好友                       " << '\n'
-         << "- 3.删好友                       " << '\n'
-         << "- 4.查看私聊的未读消息                  " << '\n'
-         << "- 5.私聊                       " << '\n'
-         << "- 6.群聊                         " << '\n'
-         << "- 7.保存退出                     " << endl;
-    cout << "---------------------------------" << endl;
-}
-
-void selectFunction(std::vector<Netizen> chat)
-{
-    pqxx::connection c = openDB();
-
-    /*
-     * 这一步是提供给第一次使用该程序的用户
-     * 如果需要从文件录入初始信息，则使用该代码，之后的程序就可以注释该代码以确保不破坏已更改数据的数据库
-     * 这里我们假设已经初始化录入了数据，您的postgresql数据库中已经有了程序数据库的信息
-    read(c);       //从文件中写入数据到类，录入初始化值
-    dataInsert(c); //将数据同步到数据库的data表中
-*/
-    dataRead(c); //从数据库中读入信息,增删好友时的数据变化可以被捕捉
-    string personname, personid, friendname;
-    cout << "登陆选 1; 作为新用户注册选 2: ";
-    int q;
-    cin >> q;
-    if (q == 1) {
-        personname = Login(personname, personid);
-        if (personname == "*") //用户想要退出
-            return;
-        setYes(personname, c);
-    } else if (q == 2) {
-        newuser(personname, personid, c);
-        setYes(personname, c);
-    } else {
-        cout << "请输入正确的数字->（1/2）: ";
-        selectFunction(chat);
-    }
-    menuMain();
-    while (true) {
-        int flag;
-        cout << "Please select: ";
-        cin >> flag;
-        switch (flag) {
-        case (1):
-            outputFriend(personname);
-            break;
-        case (2):
-            cout << "请输入你想添加的好友的名字: ";
-            cin >> friendname;
-            addFriend(personname, friendname);
-            break;
-        case (3):
-            cout << "请输入你想删除的好友的名字: ";
-            cin >> friendname;
-            deleteFriend(friendname, personname);
-            cout << "删除成功，下列是您的好友列表：" << endl;
-            outputFriend(personname);
-            break;
-        case (4): {
-            cout << "以下是你未读的消息：" << endl;
-            ShowNewMessage(personname, c);
-            cout << "\n你想要选择其他功能吗？（y/n): ";
-            string x;
-            while (cin >> x) {
-                if (x == "y") {
-                    menuMain();
-                    break;
-                } else if (x == "n") {
-                    return;
-                } else {
-                    cout << "请输入正确的选项-> (y/n) ";
-                }
-            }
-        } break;
-        case (5): {
-            cout << "请输入你想发送消息的人的名字：";
-            string receiver;
-            cin >> receiver;
-            ShowMessage(personname, receiver, c);
-            //显示receiver与personname的历史聊天记录
-            cout << "可以开始发消息了！(输入over结束聊天)" << endl;
-
-            string message;
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-            //忽略\n,使第一行读入的字符串不为空
-            std::getline(cin, message);
-            while (message != "over") {
-                Send(personname, receiver, message, c);
-                std::getline(cin, message);
-            }
-        } break;
-        case (6): {
-            selectGroupsToChat(personname, netizens, c);
-            menuMain();
-            break;
-        }
-        case (7):
-            setNO(personname, c);
-            dataInsert(c);
-            return;
-        default:
-            cout << "请输入正确的数字->（1/2/3/4/5/6/7）" << endl;
-            break;
-        }
-    }
-}

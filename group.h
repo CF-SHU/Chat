@@ -1,3 +1,4 @@
+//群聊类
 #pragma once
 #include "netizen.h"
 
@@ -11,6 +12,7 @@ public:
     bool Judge(std::string groupname, Netizen *n); //判断是否存在该群聊,存在则添加该用户为群成员
     bool hasGroup(std::string groupname);               //判断是否有这个群聊名
     void checkName();                                   //输出群聊的群成员名
+    std::string getName();                              //getter groupname
 
 private:
     std::string m_name;               //群聊名
